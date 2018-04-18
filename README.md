@@ -18,11 +18,11 @@ my system spec that works perfectly with iommu and so on:
 
 set boot graphic chipset to integrated graphic:
 
-![integrated graphic](https://i.imgur.com/t0yHqcA.jpg)
+![vt-d](https://i.imgur.com/nZnsfZX.jpg?1)
 
 set vt-d (intel virtualization stuff) on
 
-![vt-d](https://i.imgur.com/nZnsfZX.jpg?1)
+![integrated graphic](https://i.imgur.com/t0yHqcA.jpg)
 
 ## turn on kernel features
 
@@ -70,7 +70,7 @@ IOMMU Group 1 01:00.1 Audio device [0403]: NVIDIA Corporation GM204 High Definit
 8086:1901,10de:13c2,10de:0fbb
 ```
 
-all devices in the same IOMMU group will need to be passed at the same time
+all devices in the same IOMMU group will be passed at the same time
 
 #### Add booting entry with VFIO enabled in grub menu
 
@@ -187,7 +187,7 @@ Download and install AC97 driver from [realtek](http://www.realtek.com.tw/downlo
 
 > refer to [this video](https://www.youtube.com/watch?v=5-Y-oq3DMMA)
 
-## options cannot be configured by GUI
+## Configurations by xml
 
 ```bash
 vim /etc/libvirt/qemu/vm_name.xml
@@ -223,7 +223,9 @@ vim /etc/libvirt/qemu/vm_name.xml
 # </qemu:commandline>
 ```
 
-reboot the vm, *press left ctrl and right ctrl* to switch between host and vm
+reboot the vm,
+
+## *press left ctrl and right ctrl* to switch between host and vm
 
 #### Prevent GPU error 43
 
