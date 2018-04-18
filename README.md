@@ -225,7 +225,7 @@ vim /etc/libvirt/qemu/vm_name.xml
 
 reboot the vm,
 
-## *press left ctrl and right ctrl* to switch between host and vm
+### *press left ctrl and right ctrl* to switch between host and vm
 
 #### Prevent GPU error 43
 
