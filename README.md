@@ -7,7 +7,7 @@ my system spec that works perfectly with iommu and so on:
 
 * motherboard: GA-H170N-WIFI
 * CPU: i5-6400
-* RAM: 16GM with 16G swap
+* RAM: 16G with 16G swap
 * storage: 256G SSD * 2
 * GPU:
   * Intel HD Graphics 530 for linux host
@@ -146,9 +146,21 @@ CPUs, Configuration, check `Copy host CPU configuration`
 
 #### Using whole disk
 
-Set bus type to Virtio:
+```shell=
+# check and get path of the hard disk to give to windows
+cd /dev/disk/by-id/
+fdisk -l
+ls -l
+# for example:
+lrwxrwxrwx 1 root root  9 Aug 16 23:20 ata-Crucial_CT240M500SSD1_XXX -> ../../sdb
+```
 
-![virtio disk](https://i.imgur.com/8I1IFfC.png?1)
+`Add Hardware` > `Storage`
+
+* `Select or create custom storage` > manually type `/dev/disk/by-id/ata-Crucial_CT240M500SSD1_XXX`
+* `Bus type`: `VirtIO`
+
+##### VirtIO driver is required for windows
 
 Download virtio windows driver iso from [fedora](https://docs.fedoraproject.org/quick-docs/en-US/creating-windows-virtual-machines-using-virtio-drivers.html), Add hardware, Storage, Select or create custom storage, Manage, Browse Local, select the virtio windows driver iso, Device type: `CDROM device`, Bus type: `IDE`
 
@@ -159,11 +171,9 @@ Boot Options, Enable boot menu, IDE CDROM 1 first, VirtIO Disk 1 second
 * Add hardware, PCI Host Device, choose GPU
 * Add hardware, PCI Host Device, choose GPU audio
 
-#### Audio
+#### Sound
 
-Model: `ac97`:
-
-![audio-ac97](https://i.imgur.com/Xx0hFJh.png)
+choose model: `ac97`:
 
 ## Install windows
 
@@ -201,14 +211,17 @@ systemctl restart libvirtd
 > refer to https://passthroughpo.st/using-evdev-passthrough-seamless-vm-input/
 
 ```bash
+usermod -G input pastleo
+# re-login
+
 # find devices want to pass
 cd /dev/input/by-id
-cat dev_id # check which one
+cat [input_dev_id] # check which one
 
 vim /etc/libvirt/qemu.conf
 # user = "username"
 # cgroup_device_acl = [
-#   "/dev/input/by-id/input_dev_id",
+#   "/dev/input/by-id/[input_dev_id]",
 # ]
 
 vim /etc/libvirt/qemu/vm_name.xml
@@ -217,9 +230,9 @@ vim /etc/libvirt/qemu/vm_name.xml
 # add qemu parameter before </domain>:
 # <qemu:commandline>
 #   <qemu:arg value='-object'/>
-#   <qemu:arg value='input-linux,id=mouse1,evdev=/dev/input/by-id/...'/>
+#   <qemu:arg value='input-linux,id=mouse1,evdev=/dev/input/by-id/[input_dev_id]'/>
 #   <qemu:arg value='-object'/>
-#   <qemu:arg value='input-linux,id=kbd1,evdev=/dev/input/by-id/...,grab_all=on,repeat=on'/>
+#   <qemu:arg value='input-linux,id=kbd1,evdev=/dev/input/by-id/[input_dev_id],grab_all=on,repeat=on'/>
 # </qemu:commandline>
 ```
 
@@ -227,21 +240,24 @@ reboot the vm,
 
 ### *press left ctrl and right ctrl* to switch between host and vm
 
-#### Prevent GPU error 43
+#### fool windows and prevent GPU error 43
+
+this is required for my PC, otherwise I will get GPU error 43
 
 ```xml
-      <vendor_id state='on' value='123456789ab'/>
-```
-
-#### fool windows
-
-```xml
-    <kvm>
-      <hidden state='on'/>
-    </kvm>
-```
-
-```xml
-  <cpu mode='host-passthrough' check='none'/>
+  <features>
+    <acpi/>
+    <apic/>
+    <hyperv>
+      <relaxed state='on'/>
+      <vapic state='on'/>
+      <spinlocks state='on' retries='8191'/>
++     <vendor_id state='on' value='123456789ab'/>
+    </hyperv>
++   <kvm>
++     <hidden state='on'/>
++   </kvm>
+    <vmport state='off'/>
+  </features>
 ```
 
