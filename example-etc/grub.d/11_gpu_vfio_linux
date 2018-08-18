@@ -3,6 +3,7 @@ require 'pathname'
 
 # Configurations:
 VFIO_WANTED_PCI_KEYWORDS = ['NVIDIA']
+GRUB_VFIO_EXTRA_CMDLINE = ""
 GRUB_CMDLINE_LINUX_DEFAULT = ENV['GRUB_CMDLINE_LINUX_DEFAULT']
 vfio_id_regex = /\[(\w{4}:\w{4})\]/
 pci_name_regex = /^\w+:[^:]+:(.*)$/
@@ -10,29 +11,32 @@ current_dir = File.dirname(__FILE__)
 
 STDERR.puts("Generating with vfio linux entries with keyword: #{VFIO_WANTED_PCI_KEYWORDS.join(',')}...")
 
-Dir["/sys/kernel/iommu_groups/*/devices/*"].map do |path|
-  pathnames = Pathname(path).each_filename.to_a
-  [pathnames[3], pathnames[5]]
-end.group_by do |iommu, _id|
-  iommu
-end.map do |iommu, pcis|
-  have_key_word = false
-  name = ''
-  vfio_ids = pcis.map do |_, id|
-    lspci_info = `lspci -nns #{id}`
-    if VFIO_WANTED_PCI_KEYWORDS.any? {|keyword| lspci_info.include?(keyword) }
-      have_key_word = true
-      name = pci_name_regex.match(lspci_info)[1].strip
+vfio_ids =
+  Dir["/sys/kernel/iommu_groups/*/devices/*"].map do |path|
+    pathnames = Pathname(path).each_filename.to_a
+    [pathnames[3], pathnames[5]]
+  end.group_by do |iommu, _id|
+    iommu
+  end.flat_map do |iommu, pcis|
+    have_key_word = false
+    ids = pcis.map do |_, id|
+      lspci_info = `lspci -nns #{id}`
+      if VFIO_WANTED_PCI_KEYWORDS.any? {|keyword| lspci_info.include?(keyword) }
+        have_key_word = true
+        name = pci_name_regex.match(lspci_info)[1].strip
+        STDERR.puts("found '#{name}'")
+      end
+      vfio_id_regex.match(lspci_info)[1]
     end
-    vfio_id_regex.match(lspci_info)[1]
+    if have_key_word
+      ids
+    else
+      []
+    end
   end
-  if have_key_word
-    STDERR.puts("adding linux entry with VFIO '#{name}'")
-    passing_env = {}
-    passing_env['GRUB_CMDLINE_LINUX_DEFAULT'] = "#{GRUB_CMDLINE_LINUX_DEFAULT} vfio_pci.ids=#{vfio_ids.join(',')}"
-    passing_env['GRUB_DISTRIBUTOR'] = "VFIO '#{name}'"
-    system(passing_env, "#{current_dir}/10_linux")
-  end
-end
 
-
+passing_env = {}
+passing_env['GRUB_CMDLINE_LINUX_DEFAULT'] = [GRUB_CMDLINE_LINUX_DEFAULT, "vfio_pci.ids=#{vfio_ids.join(',')}", GRUB_VFIO_EXTRA_CMDLINE].join(' ').strip
+passing_env['GRUB_DISTRIBUTOR'] = "VFIO with '#{VFIO_WANTED_PCI_KEYWORDS.join(',')}'"
+#pp passing_env
+system(passing_env, "#{current_dir}/10_linux")

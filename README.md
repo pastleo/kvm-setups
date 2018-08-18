@@ -41,6 +41,12 @@ vfio
 vfio_pci
 kvm
 kvm_intel
+virtio-pci
+virtio-net
+virtio-blk
+virtio-balloon
+virtio-ring
+virtio
 ```
 
 > see `example-etc/modules-load.d/vm.conf`
@@ -259,5 +265,31 @@ this is required for my PC, otherwise I will get GPU error 43
 +   </kvm>
     <vmport state='off'/>
   </features>
+```
+
+## Some settings for convenience
+
+I tried to switch Graphic card ownership between vfio and host without reboot or restart X server [according to this post](https://arseniyshestakov.com/2016/03/31/how-to-pass-gpu-to-vm-and-back-without-x-restart/), but it did not work, I guess it is nvidia's driver problem, currently GTX970 is still not supported by nouveau...
+
+To utilize second monitor when VM is not running, I connect monitors like this:
+
+```
+Intel Graphics --- Monitor 1
+               \
+                \
+                 \
+Graphic card   --- Monitor 2
+```
+
+When I want to start VM, disable Monitor 2 on the host and boot VM
+
+#### Grub boot menu
+
+set the following variables in `/etc/default/grub` to make grub remember your last boot choice:
+
+```
+GRUB_DEFAULT=saved
+...
+GRUB_SAVEDEFAULT="true"
 ```
 
