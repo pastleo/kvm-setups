@@ -11,6 +11,12 @@ or other application using the libvirt API.
   <memory unit='KiB'>10485760</memory>
   <currentMemory unit='KiB'>10485760</currentMemory>
   <vcpu placement='static'>4</vcpu>
+  <cputune>
+    <vcpupin vcpu='0' cpuset='0'/>
+    <vcpupin vcpu='1' cpuset='1'/>
+    <vcpupin vcpu='2' cpuset='2'/>
+    <vcpupin vcpu='3' cpuset='3'/>
+  </cputune>
   <os>
     <type arch='x86_64' machine='pc-i440fx-2.11'>hvm</type>
     <loader readonly='yes' type='pflash'>/usr/share/ovmf/x64/OVMF_CODE.fd</loader>
@@ -33,6 +39,7 @@ or other application using the libvirt API.
   </features>
   <cpu mode='host-model' check='partial'>
     <model fallback='allow'/>
+    <topology sockets='1' cores='4' threads='1'/>
   </cpu>
   <clock offset='localtime'>
     <timer name='rtc' tickpolicy='catchup'/>

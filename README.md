@@ -93,6 +93,12 @@ then `grub-mkconfig -o /boot/grub/grub.cfg` and reboot, choose "VFIO '...' Linux
 
 > devices being passthrough will not be available for host OS
 
+## Install required packages
+
+```shell=
+yay -S qemu libvirt ovmf virt-manager
+```
+
 ## Create windows VM
 
 #### Add a bridge network via nmcli before adding VM
@@ -246,6 +252,21 @@ reboot the vm,
 
 ### *press left ctrl and right ctrl* to switch between host and vm
 
+#### CPU pinning
+
+this can improve CPU performance inside VM, follow [instructions](https://wiki.archlinux.org/index.php/PCI_passthrough_via_OVMF#CPU_pinning), example:
+
+```xml
+  <cputune>
+    <vcpupin vcpu='0' cpuset='0'/>
+    <vcpupin vcpu='1' cpuset='1'/>
+    <vcpupin vcpu='2' cpuset='2'/>
+    <vcpupin vcpu='3' cpuset='3'/>
+  </cputune>
+...
+    <topology sockets='1' cores='4' threads='1'/>
+```
+
 #### fool windows and prevent GPU error 43
 
 this is required for my PC, otherwise I will get GPU error 43
@@ -285,11 +306,9 @@ When I want to start VM, disable Monitor 2 on the host and boot VM
 
 #### Grub boot menu
 
-set the following variables in `/etc/default/grub` to make grub remember your last boot choice:
+set default grub boot option, my vfio boot option is 3rd (first is 0):
 
 ```
-GRUB_DEFAULT=saved
-...
-GRUB_SAVEDEFAULT="true"
+grub-set-default 2
 ```
 
