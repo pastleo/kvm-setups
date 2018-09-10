@@ -1,9 +1,12 @@
-GPU Passthrough with QEMU/KVM and virt-manager
+My QEMU/KVM and virt-manager setups
 ======
 
-I basically follow this arch tutorial: [PCI passthrough via OVMF](https://wiki.archlinux.org/index.php/PCI_passthrough_via_OVMF), please follow steps inside to check if system is capable of doing this
+## Hardware support
 
-my system spec that works perfectly with iommu and so on:
+* least requirement: [KVM hardware support](https://wiki.archlinux.org/index.php/KVM#Hardware_support)
+* GPU passthrough: [PCI passthrough via OVMF Prerequisites](https://wiki.archlinux.org/index.php/PCI_passthrough_via_OVMF#Prerequisites)
+
+my system specs to run with GPU passthrough
 
 * motherboard: GA-H170N-WIFI
 * CPU: i5-6400
@@ -14,15 +17,15 @@ my system spec that works perfectly with iommu and so on:
   * NVIDIA GTX970 for windows guest
 * OS: Arch Linux
 
-## BIOS settings
+## BIOS settings (GA-H170N-WIFI as example)
 
-set boot graphic chipset to integrated graphic:
+set boot graphic chipset to integrated graphic (for GPU passthrough, avoid using dGPU):
 
-![vt-d](https://i.imgur.com/nZnsfZX.jpg?1)
+![integrated graphic](https://i.imgur.com/nZnsfZX.jpg?1)
 
 set vt-d (intel virtualization stuff) on
 
-![integrated graphic](https://i.imgur.com/t0yHqcA.jpg)
+![vt-d](https://i.imgur.com/t0yHqcA.jpg)
 
 ## turn on kernel features
 
@@ -61,7 +64,7 @@ options kvm_intel nested=1
 
 > see `example-etc/modprobe.d/vm.conf`
 
-then reboot.
+then reboot, [check if kernel features is enabled](https://wiki.archlinux.org/index.php/KVM#Kernel_support)
 
 ## passthrough GPU
 
@@ -93,24 +96,32 @@ then `grub-mkconfig -o /boot/grub/grub.cfg` and reboot, choose "VFIO '...' Linux
 
 > devices being passthrough will not be available for host OS
 
-## Install required packages
+## Install required packages and start service
 
 ```shell=
-yay -S qemu libvirt ovmf virt-manager
+yay -S qemu libvirt ovmf virt-manager ebtables dnsmasq bridge-utils
+systemctl enable libvirtd
+systemctl restart libvirtd
+
+# if want to avoid entering password every time:
+usermod -G libvirtd $USER # re-login is required
 ```
 
-## Create windows VM
+I encounter `Cannot check QEMU binary /usr/bin/qemu-kvm: No such file or directory`, according to [this solution](http://wood1978.dyndns.org/~wood/wordpress/2013/03/21/cannot-check-qemu-binary-usrbinqemu-kvm-no-such-file-or-directory/), just link executable:
 
-#### Add a bridge network via nmcli before adding VM
-
-I want my windows vm to be able to access local network, just follow [this tutorial](https://www.cyberciti.biz/faq/how-to-add-network-bridge-with-nmcli-networkmanager-on-linux/)
-
-then allow qemu to use the bridge created:
-
-```bash
-$ sudo mkdir /etc/qemu
-$ sudo echo 'allow br0' >> /etc/qemu/bridge.conf
+```shell=
+ln -s /usr/bin/qemu-{system-x86_64,kvm}
 ```
+
+#### Enable virtual network
+
+ensure `ebtables`, `dnsmasq` is installed, open virt-manager GUI, `Edit` -> `Connection Details` -> `Virtual Networks`, choose `default`, check `Autostart` and press the play button:
+
+![enable-virt-network](https://i.imgur.com/tVAbzeT.png)
+
+## Windows VM with GPU passthrough for gaming
+
+> for sample virt vm xml see `example-etc/libvirt/qemu/win10.xml`
 
 #### Configure libvirt
 
@@ -123,12 +134,8 @@ vim /etc/libvirt/qemu.conf
 #   "/usr/share/ovmf/x64/OVMF_CODE.fd:/usr/share/ovmf/x64/OVMF_VARS.fd"
 #   ...
 # ]
-systemctl enable libvirtd
 systemctl restart libvirtd
-usermod -G libvirtd pastleo
 ```
-
-then re-login.
 
 #### Create OVMF VM
 
@@ -140,9 +147,7 @@ Use the pretty GUI virt-manager to create vm, basically follow [this section](ht
 4. Use ISO Image, Browse, Browse Local, find windows install iso file, OS type: `Windows`
 5. set RAM and CPU
 6. Select or create custom storage, Manage, Browse Local, find `/dev/sdx` to give whole disk
-7. check `Customize configuration before install`, Network selection: `Specify shared device name`, Bridge name: `br0`
-
-## Configure VM
+7. check `Customize configuration before install`
 
 #### OVMF UEFI firmware
 
@@ -187,7 +192,7 @@ Boot Options, Enable boot menu, IDE CDROM 1 first, VirtIO Disk 1 second
 
 choose model: `ac97`:
 
-## Install windows
+#### Install windows
 
 Begin Installation, use windows installation iso to boot
 
@@ -209,15 +214,6 @@ Download and install AC97 driver from [realtek](http://www.realtek.com.tw/downlo
 
 > refer to [this video](https://www.youtube.com/watch?v=5-Y-oq3DMMA)
 
-## Configurations by xml
-
-```bash
-vim /etc/libvirt/qemu/vm_name.xml
-systemctl restart libvirtd
-```
-
-> see `example-etc/libvirt/qemu/win10.xml`
-
 #### Mouse and keyboard
 
 > refer to https://passthroughpo.st/using-evdev-passthrough-seamless-vm-input/
@@ -236,7 +232,7 @@ vim /etc/libvirt/qemu.conf
 #   "/dev/input/by-id/[input_dev_id]",
 # ]
 
-vim /etc/libvirt/qemu/vm_name.xml
+virsh edit vm_name
 # modify top level <domain>:
 # <domain type='kvm' xmlns:qemu='http://libvirt.org/schemas/domain/qemu/1.0'>
 # add qemu parameter before </domain>:
@@ -288,7 +284,7 @@ this is required for my PC, otherwise I will get GPU error 43
   </features>
 ```
 
-## Some settings for convenience
+#### monitor setup for convenience
 
 I tried to switch Graphic card ownership between vfio and host without reboot or restart X server [according to this post](https://arseniyshestakov.com/2016/03/31/how-to-pass-gpu-to-vm-and-back-without-x-restart/), but it did not work, I guess it is nvidia's driver problem, currently GTX970 is still not supported by nouveau...
 
@@ -304,11 +300,54 @@ Graphic card   --- Monitor 2
 
 When I want to start VM, disable Monitor 2 on the host and boot VM
 
-#### Grub boot menu
+#### Default grub boot with gpu passthrough
 
 set default grub boot option, my vfio boot option is 3rd (first is 0):
 
 ```
 grub-set-default 2
 ```
+
+## macOS High Sierra VM
+
+thanks to [kholia/OSX-KVM](https://github.com/kholia/OSX-KVM/tree/master/HighSierra), this can be done easily, and I prefer to use virt-manager
+
+#### Prepare installation iso
+
+follow [Installation Preparation](https://github.com/kholia/OSX-KVM/tree/master/HighSierra#preparation-steps-on-your-current-macos-installation), using `create_iso_highsierra.sh` to create iso and copy to linux host
+
+#### Prepare UEFI firmwares and clover image
+
+```
+# with root
+curl 'https://github.com/kholia/OSX-KVM/raw/master/OVMF_CODE.fd' > /usr/share/ovmf/x64/OVMF_CODE_MAC.fd
+curl 'https://github.com/kholia/OSX-KVM/raw/master/OVMF_VARS-1024x768.fd' > /usr/share/ovmf/x64/OVMF_VARS_MAC.fd
+curl 'https://github.com/kholia/OSX-KVM/raw/master/Clover.qcow2' > /var/lib/libvirt/images/Clover.qcow2
+```
+
+this firmware will make vm mac screen only 1024x768, visit [Preparation steps on your QEMU system in kholia/OSX-KVM](https://github.com/kholia/OSX-KVM/tree/master/HighSierra#preparation-steps-on-your-qemu-system) for more info
+
+#### Create Mac VM via XML
+
+download [example-etc/libvirt/qemu/macos-high-sierra.xml](https://github.com/pastleo/kvm-setups/blob/master/example-etc/libvirt/qemu/macos-high-sierra.xml)
+
+```shell=
+vim macos-high-sierra.xml # change lines marked by CHANGEME
+virt-xml-validate macos-high-sierra.xml
+virsh define macos-high-sierra.xml
+```
+
+this xml is modified from [https://github.com/kholia/OSX-KVM/blob/master/macOS-HS-libvirt.xml](https://github.com/kholia/OSX-KVM/blob/master/macOS-HS-libvirt.xml)
+
+#### Configure Mac VM
+
+using virt-manager GUI:
+
+* CPU and RAM: make sure they fits hardware
+* Main storage: `Add Hardware` -> `Storage` -> Create or Select image, Disk type: `Disk device` and Bus type: `SATA`
+* network: xml already set to use virt default NAT
+
+#### Install macOS
+
+Set CDROM to use the iso from `create_iso_highsierra.sh`, then just follow [instructions from kholia/OSX-KVM](https://github.com/kholia/OSX-KVM/tree/master/HighSierra#installer-steps)
 
