@@ -319,10 +319,13 @@ follow [Installation Preparation](https://github.com/kholia/OSX-KVM/tree/master/
 #### Prepare UEFI firmwares and clover image
 
 ```
-# with root
-curl 'https://github.com/kholia/OSX-KVM/raw/master/OVMF_CODE.fd' > /usr/share/ovmf/x64/OVMF_CODE_MAC.fd
-curl 'https://github.com/kholia/OSX-KVM/raw/master/OVMF_VARS-1024x768.fd' > /usr/share/ovmf/x64/OVMF_VARS_MAC.fd
-curl 'https://github.com/kholia/OSX-KVM/raw/master/Clover.qcow2' > /var/lib/libvirt/images/Clover.qcow2
+cd to/some/dir
+git clone https://github.com/kholia/OSX-KVM.git
+# at the time git commit sha is cfd120dd3092fb38a89544785b2a97bc93668b44
+cd OSX-KVM
+sudo cp OVMF_CODE.fd /usr/share/ovmf/x64/OVMF_CODE_MACOS_HS.fd
+sudo cp OVMF_VARS-1024x768.fd /var/lib/libvirt/qemu/nvram/macos-high-sierra_VARS.fd
+sudo cp Clover.qcow2 /var/lib/libvirt/images/Clover.qcow2
 ```
 
 this firmware will make vm mac screen only 1024x768, visit [Preparation steps on your QEMU system in kholia/OSX-KVM](https://github.com/kholia/OSX-KVM/tree/master/HighSierra#preparation-steps-on-your-qemu-system) for more info
@@ -333,11 +336,10 @@ download [example-etc/libvirt/qemu/macos-high-sierra.xml](https://github.com/pas
 
 ```shell=
 vim macos-high-sierra.xml # change lines marked by CHANGEME
-virt-xml-validate macos-high-sierra.xml
 virsh define macos-high-sierra.xml
 ```
 
-this xml is modified from [https://github.com/kholia/OSX-KVM/blob/master/macOS-HS-libvirt.xml](https://github.com/kholia/OSX-KVM/blob/master/macOS-HS-libvirt.xml)
+this xml is modified from [https://github.com/kholia/OSX-KVM/blob/cfd120dd3092fb38a89544785b2a97bc93668b44/macOS-HS-libvirt.xml](https://github.com/kholia/OSX-KVM/blob/cfd120dd3092fb38a89544785b2a97bc93668b44/macOS-HS-libvirt.xml)
 
 #### Configure Mac VM
 

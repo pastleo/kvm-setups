@@ -1,14 +1,15 @@
 <domain type='kvm' xmlns:qemu='http://libvirt.org/schemas/domain/qemu/1.0'>
   <name>macos-high-sierra</name>
   <uuid>xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</uuid> <!-- CHANGEME -->
+  <!-- just use some online uuid generation tool -->
   <title>macOS High Sierra</title>
   <memory unit='KiB'>4194304</memory>
   <currentMemory unit='KiB'>4194304</currentMemory>
   <vcpu placement='static'>4</vcpu>
   <os>
     <type arch='x86_64' machine='pc-q35-2.10'>hvm</type>
-    <loader readonly='yes' type='pflash'>/usr/share/ovmf/x64/OVMF_CODE_MAC.fd</loader>
-    <nvram>/usr/share/ovmf/x64/OVMF_VARS_MAC.fd</nvram>
+    <loader readonly='yes' type='pflash'>/usr/share/ovmf/x64/OVMF_CODE_MACOS_HS.fd</loader>
+    <nvram>/var/lib/libvirt/qemu/nvram/macos-high-sierra_VARS.fd</nvram>
   </os>
   <features>
     <acpi/>
@@ -79,7 +80,9 @@
       <address type='pci' domain='0x0000' bus='0x00' slot='0x1d' function='0x2'/>
     </controller>
     <interface type='bridge'>
-      <mac address='aa:bb:cc:dd:ee:ff'/> <!-- CHANGEME -->
+      <mac address='52:xx:xx:xx:xx:xx'/> <!-- CHANGEME -->
+      <!-- use some online mac address generation tool,
+      let address begin with '52' to prevent multicast dev err -->
       <source bridge='virbr0'/>
       <target dev='tap0'/>
       <model type='e1000-82545em'/>
