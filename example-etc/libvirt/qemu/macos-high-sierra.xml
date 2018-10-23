@@ -95,7 +95,6 @@
     <input type='tablet' bus='usb'>
       <address type='usb' bus='0' port='3'/>
     </input>
-    <input type='keyboard' bus='ps2'/>
     <graphics type='spice'>
       <listen type='none'/>
     </graphics>
@@ -106,12 +105,6 @@
       <model type='qxl' ram='65536' vram='65536' vgamem='16384' heads='1' primary='yes'/>
       <address type='pci' domain='0x0000' bus='0x00' slot='0x01' function='0x0'/>
     </video>
-    <redirdev bus='usb' type='spicevmc'>
-      <address type='usb' bus='0' port='5'/>
-    </redirdev>
-    <hub type='usb'>
-      <address type='usb' bus='0' port='1'/>
-    </hub>
     <memballoon model='none'/>
   </devices>
   <qemu:commandline>

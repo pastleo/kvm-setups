@@ -119,6 +119,38 @@ ensure `ebtables`, `dnsmasq` is installed, open virt-manager GUI, `Edit` -> `Con
 
 ![enable-virt-network](https://i.imgur.com/tVAbzeT.png)
 
+#### static IP under virtual network
+
+[StackExchange](https://serverfault.com/questions/627238/kvm-libvirt-how-to-configure-static-guest-ip-addresses-on-the-virtualisation-ho)
+
+```shell=
+virsh net-edit default
+```
+
+```xml=
+  <ip address='192.168.122.1' netmask='255.255.255.0'>
+    <dhcp>
+      <range start='192.168.122.2' end='192.168.122.254'/>
+      <host mac='52:xx:xx:xx:xx:xx' name='vm-1-name' ip='192.168.122.53'/>
+      <host mac='52:xx:xx:xx:xx:xx' name='vm-2-name' ip='192.168.122.54'/>
+    </dhcp>
+  </ip>
+```
+
+```shell=
+virsh net-destroy default
+systemctl restart libvirtd
+```
+
+you can also map hostname to ip by `/etc/hosts`:
+
+```
+vim /etc/hosts
+
+192.168.122.53 vm-1-name
+192.168.122.54 vm-2-name
+```
+
 ## Windows VM with GPU passthrough for gaming
 
 > for sample virt vm xml see `example-etc/libvirt/qemu/win10.xml`
