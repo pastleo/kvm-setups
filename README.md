@@ -1,43 +1,59 @@
-My QEMU/KVM and virt-manager setups
+在 ArchLinux 上使用 KVM 虛擬 Windows 打電動
 ======
 
-## Hardware support
+## 硬體需求
 
-* least requirement: [KVM hardware support](https://wiki.archlinux.org/index.php/KVM#Hardware_support)
-* GPU passthrough: [PCI passthrough via OVMF Prerequisites](https://wiki.archlinux.org/index.php/PCI_passthrough_via_OVMF#Prerequisites)
+* [檢查硬體是否能跑 KVM](https://wiki.archlinux.org/index.php/KVM#Hardware_support)
+* [PCI passthrough via OVMF Prerequisites](https://wiki.archlinux.org/index.php/PCI_passthrough_via_OVMF#Prerequisites)
 
-my system specs to run with GPU passthrough
+我的機器大概長這樣
 
-* motherboard: GA-H170N-WIFI
+* 主機板: GA-H170N-WIFI
 * CPU: i5-6400
 * RAM: 16G with 16G swap
-* storage: 256G SSD * 2
 * GPU:
   * Intel HD Graphics 530 for linux host
-  * NVIDIA GTX970 for windows guest
-* OS: Arch Linux
+  * NVIDIA GTX970 (dGPU) for windows guest
+* host OS: [Arch Linux](https://www.archlinux.org/)
+  * desktop environment: [KDE Plasma](https://kde.org/plasma-desktop)
+
+> 有兩個 GPU 比較適合這樣玩，因為把 GPU 給 guest 之後要有辦法操作 host OS，而且 host OS 已經跑起來（甚至有 GUI）再把 GPU hot-swap 到 guest OS 也是一項非常困難的事情
+
+這篇文章假設你已對 Linux 有一定程度的了解（權限，檔案系統，設定檔等等的慣例）如果你日常生活是使用 ArchLinux，相信對 Linux 各個方面已經有一定程度的了解，確認一下自己的機器覺得適合這樣玩的話，以下是我整理出來的設定步驟：
 
 ## BIOS settings (GA-H170N-WIFI as example)
 
-set boot graphic chipset to integrated graphic (for GPU passthrough, avoid using dGPU):
+讓預設 GPU 使用內顯避免用到 dGPU
 
 ![integrated graphic](https://i.imgur.com/nZnsfZX.jpg?1)
 
-set vt-d (intel virtualization stuff) on
+把 vt-d (或是任何 Virtualization 的功能) 打開
 
 ![vt-d](https://i.imgur.com/t0yHqcA.jpg)
 
-## turn on kernel features
+## Kernel features
 
-#### add linux boot parameters to enable iommu
+### 在 grub 開機參數中啟用 iommu
 
-add `intel_iommu=on iommu=pt` to `GRUB_CMDLINE_LINUX_DEFAULT` in `/etc/default/grub`, then run `grub-mkconfig -o /boot/grub/grub.cfg`
+加入 `intel_iommu=on iommu=pt` 到 [`/etc/default/grub`](https://github.com/pastleo/kvm-setups/blob/master/example-etc/default/grub#L6) 環境變數  `GRUB_CMDLINE_LINUX_DEFAULT`, 像是這樣:
 
-> see `example-etc/default/grub`
+```
+...
+GRUB_DISTRIBUTOR="Arch"
+GRUB_CMDLINE_LINUX_DEFAULT="quiet intel_iommu=on iommu=pt"
+GRUB_CMDLINE_LINUX=""
+...
+```
 
-#### enable kernel modules
+接著執行 `grub-mkconfig` 重新產生 grub config 檔案:
 
-add `/etc/modules-load.d/vm.conf`:
+```shell=
+grub-mkconfig -o /boot/grub/grub.cfg
+```
+
+### 啟用 kernel modules
+
+add [`/etc/modules-load.d/vm.conf`](https://github.com/pastleo/kvm-setups/blob/master/example-etc/modules-load.d/vm.conf):
 
 ```
 vfio
@@ -52,25 +68,25 @@ virtio-ring
 virtio
 ```
 
-> see `example-etc/modules-load.d/vm.conf`
+### 設定 kernel module 參數
 
-#### add kernel module parameters
-
-add `/etc/modprobe.d/vm.conf` for better performance:
+add [`/etc/modprobe.d/vm.conf`](https://github.com/pastleo/kvm-setups/blob/master/example-etc/modprobe.d/vm.conf):
 
 ```
 options kvm_intel nested=1
 ```
 
-> see `example-etc/modprobe.d/vm.conf`
+### kernel 相關的設定完成之後重新啟動
 
-then reboot, [check if kernel features is enabled](https://wiki.archlinux.org/index.php/KVM#Kernel_support)
+如果可以成功開機，檢查看看功能是否正常：https://wiki.archlinux.org/index.php/KVM#Kernel_support
 
-## passthrough GPU
+## 使 dGPU 分離 host OS 以便進行 passthrough
 
-#### Identify GPU and iommu ids
+在開機的時候就把準備給 guest OS 的 dGPU 從 host OS 中分離，以保持 dGPU 是乾淨沒有被使用的狀態，同時會依照硬體限制把 PCI hardware 分成一些 IOMMU group，必須以 IOMMU group 為單位做分離
 
-run `ls_iommu.sh` of this repo, find the iommu group that GPU is in:
+### 檢查 iommu group
+
+這個 repo 有個 [`ls_iommu.sh`](https://github.com/pastleo/kvm-setups/blob/master/ls_iommu.sh) 可以用來看 PCI hardware 分別在哪個 IOMMU group:
 
 ```
 IOMMU Group 1 00:01.0 PCI bridge [0604]: Intel Corporation Xeon E3-1200 v5/E3-1500 v5/6th Gen Core Processor PCIe Controller (x16) [8086:1901] (rev 07)
@@ -79,47 +95,117 @@ IOMMU Group 1 01:00.1 Audio device [0403]: NVIDIA Corporation GM204 High Definit
 8086:1901,10de:13c2,10de:0fbb
 ```
 
-all devices in the same IOMMU group will be passed at the same time
+我這張 dGPU 上面同時還有聲音輸出的 PCI device，加上 PCI bridge 會一起被分離
 
-#### Add booting entry with VFIO enabled in grub menu
+### 加入要分離 dGPU 的 grub 開機選項
 
-copy `example-etc/grub.d/11_gpu_vfio_linux` to `etc/grub.d/11_gpu_vfio_linux`, `chmod +x etc/grub.d/11_gpu_vfio_linux`, and modify it if needed:
+我用 [Ruby](https://www.ruby-lang.org/zh_tw/) 寫了一個 script 來幫忙偵測並產生分離 dGPU 的開機選項：https://github.com/pastleo/kvm-setups/blob/master/example-etc/grub.d/11_gpu_vfio_linux
+
+> 用 Ruby 寫的意思就是要先把 [ruby](https://www.archlinux.org/packages/extra/x86_64/ruby/) 安裝好：pacman -S ruby
+
+1. 把這個檔案下載回去並放在 `/etc/grub.d/11_gpu_vfio_linux`
+2. 給予執行權限: `chmod +x /etc/grub.d/11_gpu_vfio_linux`
+3. 依照狀況修改 `vim /etc/grub.d/11_gpu_vfio_linux`，尤其是 [`VFIO_WANTED_PCI_KEYWORDS`](https://github.com/pastleo/kvm-setups/blob/master/example-etc/grub.d/11_gpu_vfio_linux#L5)：
 
 ```
 # Configurations:
 VFIO_WANTED_PCI_KEYWORDS = ['NVIDIA']
 ```
 
-this script will find the group with `NVIDIA` from `ls_iommu.sh` output and add an entry on grub menu booting with the group passthrough
+這個 script 會尋找包含 `VFIO_WANTED_PCI_KEYWORDS` 的 PCI device 並產生分離同個 IOMMU group PCI devices 的 grub 開機選項，設定好之後執行 `grub-mkconfig` 重新產生 grub config 檔案:
 
-then `grub-mkconfig -o /boot/grub/grub.cfg` and reboot, choose "VFIO '...' Linux" to boot
+```shell=
+grub-mkconfig -o /boot/grub/grub.cfg
+```
 
-> devices being passthrough will not be available for host OS
+完成之後重新開機應該可以看到 `VFIO with 'NVIDIA' Linux` 的開機選項，選擇該開機選項開機的時候就會以分離 dGPU 的模式開機，***連接該 dGPU 的螢幕就不會有畫面了***，使用 [Bumblebee](https://wiki.archlinux.org/index.php/Bumblebee) 之類技術的筆電我個人沒試過不知道會發生什麼事
 
-## Install required packages and start service
+> 因為 Nvidia 對 Linux 的相容性非常糟糕，我已經修改 grub 預設開機選項 `grub-set-default 2` (從 0 開始，這樣代表把預設設定成第三個選項)，常態性把這張顯示卡處於分離的狀態
+
+## 安裝並設定好 libvirt, QEMU
 
 ```shell=
 yay -S qemu libvirt ovmf virt-manager ebtables dnsmasq bridge-utils
-systemctl enable libvirtd
-systemctl restart libvirtd
-
-# if want to avoid entering password every time:
-usermod -G libvirtd $USER # re-login is required
 ```
 
-I encounter `Cannot check QEMU binary /usr/bin/qemu-kvm: No such file or directory`, according to [this solution](http://wood1978.dyndns.org/~wood/wordpress/2013/03/21/cannot-check-qemu-binary-usrbinqemu-kvm-no-such-file-or-directory/), just link executable:
+### 設定權限
+
+> 這邊的 `[USER]` 請替換成自己 GUI session 用的 user
+
+```shell=
+usermod -a -G libvirt [USER]
+usermod -a -G input [USER]
+```
+
+重新登入 user session 讓設定生效
+
+### 設定 [`/etc/libvirt/qemu.conf`](https://github.com/pastleo/kvm-setups/blob/master/example-etc/libvirt/qemu.conf)
+
+```shell=
+vim /etc/libvirt/qemu.conf
+```
+
+#### 1. 設定 qemu 執行時使用的使用者
+
+讓虛擬機用 GUI session 的身份來執行：
+
+```
+...
+user = "[USER]"
+...
+group = "[USER]"
+...
+```
+
+#### 2. 允許存取鍵盤滑鼠 `evdev`
+
+我用同組鍵盤滑鼠來操作 guest / host OS，同時兼具效能又不用兩組鍵盤滑鼠的解決方案就是 [evdev passthrough](https://passthroughpo.st/using-evdev-passthrough-seamless-vm-input/)，在這邊先設定 `cgroup_device_acl` 允許 qemu 使用這些 devices:
+
+```
+group_device_acl = [
+    "/dev/null", "/dev/full", "/dev/zero",
+    "/dev/random", "/dev/urandom",
+    "/dev/ptmx", "/dev/kvm",
+    "/dev/rtc","/dev/hpet",
+    "/dev/input/by-id/[some_mouse_device]-event-mouse",
+    "/dev/input/by-id/[some_keyboard_device]-event-kbd"
+]
+```
+
+* 前面的 `"/dev/null", "/dev/full" ...` 是必要的
+* `"/dev/input/by-id/[some_mouse_device]-event-mouse", "/dev/input/by-id/[some_keyboard_device]-event-kbd"` 換成鍵盤滑鼠對應之 `evdev` path
+  * `cd /dev/input/by-id/`
+  * `cat ./[some_mouse_device,some_keyboard_device]-event-{mouse,kbd}`
+  * 動動滑鼠，敲敲鍵盤確認哪個 `evdev` 是要 passthrough 的
+
+改完之後 `:wq` 存檔離開
+
+### `/usr/bin/qemu-kvm` 不存在的問題
+
+個人認為這個算是 libvirt 的 bug ，先幫忙處理一下（都過這麼久了...）：
 
 ```shell=
 ln -s /usr/bin/qemu-{system-x86_64,kvm}
 ```
 
-#### Enable virtual network
+### 啟動 libvirt service:
 
-ensure `ebtables`, `dnsmasq` is installed, open virt-manager GUI, `Edit` -> `Connection Details` -> `Virtual Networks`, choose `default`, check `Autostart` and press the play button:
+```shell=
+systemctl enable libvirtd
+systemctl restart libvirtd
+```
+
+### 啟用 virtual network
+
+這個動作我們透過 `virt-manager` GUI 來做，應該可以在 desktop environment 的應用程式清單找到 `Virtual Machine Manager`，要不然在 terminal 輸入 `virt-manager` 啟動:
+
+![](https://i.imgur.com/OGlG7ac.png)
+
+`Edit` -> `Connection Details` -> `Virtual Networks`, `default`, 句選 `Autostart` 然後按下播放圖示啟動 virtual network:
 
 ![enable-virt-network](https://i.imgur.com/tVAbzeT.png)
 
-#### static IP under virtual network
+#### 如果有需要也可以設定一些固定 IP
 
 [StackExchange](https://serverfault.com/questions/627238/kvm-libvirt-how-to-configure-static-guest-ip-addresses-on-the-virtualisation-ho)
 
@@ -137,190 +223,205 @@ virsh net-edit default
   </ip>
 ```
 
-```shell=
-virsh net-destroy default
-systemctl restart libvirtd
-```
+## 建立 Windows Gaming 虛擬機
 
-you can also map hostname to ip by `/etc/hosts`:
+### 準備 UEFI firmware `OVMF`
 
-```
-vim /etc/hosts
-
-192.168.122.53 vm-1-name
-192.168.122.54 vm-2-name
-```
-
-## Windows VM with GPU passthrough for gaming
-
-> for sample virt vm xml see `example-etc/libvirt/qemu/win10.xml`
-
-#### Configure libvirt
-
-follow [this section](https://wiki.archlinux.org/index.php/PCI_passthrough_via_OVMF#Setting_up_an_OVMF-based_guest_VM)
-
-```bash
-yaourt -S qemu libvirt ovmf virt-manager
-vim /etc/libvirt/qemu.conf
-# nvram = [
-#   "/usr/share/ovmf/x64/OVMF_CODE.fd:/usr/share/ovmf/x64/OVMF_VARS.fd"
-#   ...
-# ]
-systemctl restart libvirtd
-```
-
-#### Create OVMF VM
-
-Use the pretty GUI virt-manager to create vm, basically follow [this section](https://wiki.archlinux.org/index.php/PCI_passthrough_via_OVMF#Setting_up_the_guest_OS):
-
-1. start the GUI, click `File` -> `Add Connection` -> Hypervisor: `QEMU/KVM`
-2. add VM, click `File` -> `New Virtual Machine`
-3. Connection: `QEMU/KVM`, Forward.
-4. Use ISO Image, Browse, Browse Local, find windows install iso file, OS type: `Windows`
-5. set RAM and CPU
-6. Select or create custom storage, Manage, Browse Local, find `/dev/sdx` to give whole disk
-7. check `Customize configuration before install`
-
-#### OVMF UEFI firmware
-
-Overview, set firmware to `UEFI`:
-
-![ovmf uefi](https://i.imgur.com/HHaYN4Y.png?1)
-
-> required, and the GPU have to support UEFI boot as well
-
-#### CPU
-
-CPUs, Configuration, check `Copy host CPU configuration`
-
-#### Using whole disk
+必須使用 [OVMF](https://github.com/tianocore/tianocore.github.io/wiki/OVMF) UEFI firmware 才能支援 dGPU passthrough，而且 UEFI firmware 需要搭配快閃記憶體 `nvram` ，我們從 template 複製出來準備好：
 
 ```shell=
-# check and get path of the hard disk to give to windows
-cd /dev/disk/by-id/
-fdisk -l
-ls -l
-# for example:
-lrwxrwxrwx 1 root root  9 Aug 16 23:20 ata-Crucial_CT240M500SSD1_XXX -> ../../sdb
+mkdir -p /var/lib/libvirt/qemu/nvram
+cp /usr/share/ovmf/x64/OVMF_VARS.fd /var/lib/libvirt/qemu/nvram/[vm_name]_VARS.fd
 ```
 
-`Add Hardware` > `Storage`
+### 建立 VM
 
-* `Select or create custom storage` > manually type `/dev/disk/by-id/ata-Crucial_CT240M500SSD1_XXX`
-* `Bus type`: `VirtIO`
+透過 `virt-manager` GUI 建立虛擬機，注意 hypervisor (Connection) 要選擇 `QEMU/KVM`，這邊的設定就很麻瓜了，最後一步比較需要注意的：
 
-##### VirtIO driver is required for windows
+* name 欄位對應上面跟之後寫的 `[vm_name]`
+* 句選 `Customize configuration before install`
 
-Download virtio windows driver iso from [fedora](https://docs.fedoraproject.org/quick-docs/en-US/creating-windows-virtual-machines-using-virtio-drivers.html), Add hardware, Storage, Select or create custom storage, Manage, Browse Local, select the virtio windows driver iso, Device type: `CDROM device`, Bus type: `IDE`
+按下建立之後開始做細部的設定
 
-Boot Options, Enable boot menu, IDE CDROM 1 first, VirtIO Disk 1 second
+#### `Overview` => `Hypervisor Details`
 
-#### Attatch GPU to VM
+* Chipset: `i440FX`
+* Firmware: 先選 `BIOS` 就好，不用動
 
-* Add hardware, PCI Host Device, choose GPU
-* Add hardware, PCI Host Device, choose GPU audio
+#### CPU & 記憶體
 
-#### Sound
+* CPU: 設定要幾顆 CPU，句選 `Copy host CPU configuration`，`Topology` 也設定一下避免 guest OS 沒偵測到全部的 vCPU
+* 記憶體: 就看要分多少給 guest OS，guest OS 在啟動的瞬間就會直接把 `Current allocation` 直接吃走
 
-choose model: `ac97`:
+#### 硬碟
 
-#### Install windows
+這部份就看要怎麼弄，如果打算用預設的方式（也就是建立一個 `qcow2` image 檔案）就不太需要改什麼，我這邊打算直接把實體硬碟的一個 partition 分配給虛擬機使用
 
-Begin Installation, use windows installation iso to boot
+![](https://i.imgur.com/aNAoQgC.png)
 
-#### virtio disk driver
+> 可以用 `ls -l /dev/disk/by-id` / `ls -l /dev/disk/by-partuuid` 來看要用哪個 disk/partition
 
-virtio driver is required to detect disk:
+我這邊選擇 Bus type 為 `VirtIO`，[官方推薦效能較好](https://www.linux-kvm.org/page/Tuning_KVM)，但是接下來在 Windows 安裝時會需要 [virtio driver](https://docs.fedoraproject.org/en-US/quick-docs/creating-windows-virtual-machines-using-virtio-drivers/#virtio-win-direct-downloads)
 
-![virtio-disk-driver-1](https://i.imgur.com/E6tIjFn.png)
+下載 iso 回來並且增加 CDROM Storage 並指向 `virtio-win.iso`
 
-![virtio-disk-driver-2](https://i.imgur.com/0YSW4sT.png)
+#### 其他硬體設定
 
-![virtio-disk-driver-3](https://i.imgur.com/klrqFNE.png)
+* 聲音 `Model` 選用 `AC97`，這個需要特別安裝驅動程式
+* 網路 `Device model` 選 `virtio`，也[是官方推薦效能較好](https://www.linux-kvm.org/page/Tuning_KVM)，不過也會需要 [virtio driver](https://docs.fedoraproject.org/en-US/quick-docs/creating-windows-virtual-machines-using-virtio-drivers/#virtio-win-direct-downloads)
+* `+ Add Hardware` => `PCI Host Device` 把 dGPU 加入！
 
-#### AC97 driver
+> 聲音的部份有稍微實驗一下 `HDA (ICH9)` 跟 `AC97` 的差別，兩者其實都會有一些延遲（大概 250ms 左右，還算可接受），但是 `AC97` 不會有破音的狀況發生
 
-after windows installation, reboot without driver signature verification, [follow Option Two of this post](https://www.howtogeek.com/167723/how-to-disable-driver-signature-verification-on-64-bit-windows-8.1-so-that-you-can-install-unsigned-drivers/)
+### 接著要直接去修改設定檔
 
-Download and install AC97 driver from [realtek](http://www.realtek.com.tw/downloads/downloadsView.aspx?Langid=1&PNid=14&PFid=23&Level=4&Conn=3&DownTypeID=3&GetDown=false), ignore signature verification failure warn
+按下 `Begin Installation` 建立機器，他會幫你把機器啟動，請直接關閉 (force off)，然後用這個指令開始手動修改（需要 `sudo`）：
 
-> refer to [this video](https://www.youtube.com/watch?v=5-Y-oq3DMMA)
-
-#### Mouse and keyboard
-
-> refer to https://passthroughpo.st/using-evdev-passthrough-seamless-vm-input/
-
-```bash
-usermod -G input pastleo
-# re-login
-
-# find devices want to pass
-cd /dev/input/by-id
-cat [input_dev_id] # check which one
-
-vim /etc/libvirt/qemu.conf
-# user = "username"
-# cgroup_device_acl = [
-#   "/dev/input/by-id/[input_dev_id]",
-# ]
-
-virsh edit vm_name
-# modify top level <domain>:
-# <domain type='kvm' xmlns:qemu='http://libvirt.org/schemas/domain/qemu/1.0'>
-# add qemu parameter before </domain>:
-# <qemu:commandline>
-#   <qemu:arg value='-object'/>
-#   <qemu:arg value='input-linux,id=mouse1,evdev=/dev/input/by-id/[input_dev_id]'/>
-#   <qemu:arg value='-object'/>
-#   <qemu:arg value='input-linux,id=kbd1,evdev=/dev/input/by-id/[input_dev_id],grab_all=on,repeat=on'/>
-# </qemu:commandline>
+```shell=
+virsh edit [vm_name]
 ```
 
-reboot the vm,
+> 會用 `vi` 開啟設定檔
 
-### *press left ctrl and right ctrl* to switch between host and vm
+#### 1. CPU 綁定(pinning)
 
-#### CPU pinning
-
-this can improve CPU performance inside VM, follow [instructions](https://wiki.archlinux.org/index.php/PCI_passthrough_via_OVMF#CPU_pinning), example:
+設定這個來綁定 vCPU 對應哪顆 CPU，可以增加虛擬機的效能，不過當然得看清楚自己電腦 CPU 的狀況來設定，可以參考 [ArchLinux wiki 上的教學](https://wiki.archlinux.org/index.php/PCI_passthrough_via_OVMF#CPU_pinning)，我的機器是 4 核心 CPU 因此設定成：
 
 ```xml
+<domain>
+  ...
   <cputune>
     <vcpupin vcpu='0' cpuset='0'/>
     <vcpupin vcpu='1' cpuset='1'/>
     <vcpupin vcpu='2' cpuset='2'/>
     <vcpupin vcpu='3' cpuset='3'/>
   </cputune>
-...
-    <topology sockets='1' cores='4' threads='1'/>
+  ...
+</domain>
 ```
 
-#### fool windows and prevent GPU error 43
+之後機器啟動可以用 `virsh vcpuinfo [vm_name]` 來觀察 CPU time 跟綁定狀況
 
-this is required for my PC, otherwise I will get GPU error 43
+#### 2. 設定 UEFI firmware 以及 nvram
 
 ```xml
-  <features>
-    <acpi/>
-    <apic/>
-    <hyperv>
-      <relaxed state='on'/>
-      <vapic state='on'/>
-      <spinlocks state='on' retries='8191'/>
-+     <vendor_id state='on' value='123456789ab'/>
-    </hyperv>
-+   <kvm>
-+     <hidden state='on'/>
-+   </kvm>
-    <vmport state='off'/>
-  </features>
+<domain>
+  ...
+  <os>
+    ...
+    <loader readonly='yes' type='pflash'>/usr/share/ovmf/x64/OVMF_CODE.fd</loader>
+    <nvram>/var/lib/libvirt/qemu/nvram/[vm_name]_VARS.fd</nvram>
+    ...
+  </os>
+  ...
+</domain>
 ```
 
-#### monitor setup for convenience
 
-I tried to switch Graphic card ownership between vfio and host without reboot or restart X server [according to this post](https://arseniyshestakov.com/2016/03/31/how-to-pass-gpu-to-vm-and-back-without-x-restart/), but it did not work, I guess it is nvidia's driver problem, currently GTX970 is still not supported by nouveau...
+#### 3. 避免 Nvidia GPU Error 43
 
-To utilize second monitor when VM is not running, I connect monitors like this:
+```xml
+<domain>
+  ...
+  <features>
+    ...
+    <hyperv>
+      ...
+      <vendor_id state='on' value='xxxxxxxx'/>
+      ...
+    </hyperv>
+    ...
+  </features>
+  ...
+  <kvm>
+    <hidden state='on'/>
+  </kvm>
+  ...
+</domain>
+```
+
+`xxxxxxxx` 填寫一個隨機的英數字串就可以
+
+#### 4. 鍵盤滑鼠 `evdev` passthrough
+
+首先要把第一行改成這樣：
+
+```diff
+- <domain type='kvm'>
++ <domain type='kvm' xmlns:qemu='http://libvirt.org/schemas/domain/qemu/1.0'>
+```
+
+加入 `<qemu:commandline>`，`input-linux` 指定上面設定過允許要 passthrough 的鍵盤滑鼠 `evdev`：
+
+```xml
+<domain type='kvm' xmlns:qemu='http://libvirt.org/schemas/domain/qemu/1.0'>
+  ...
+  <qemu:commandline>
+    <qemu:arg value='-object'/>
+    <qemu:arg value='input-linux,id=mouse1,evdev=/dev/input/by-id/[some_mouse_device]-event-mouse'/>
+    <qemu:arg value='-object'/>
+    <qemu:arg value='input-linux,id=kbd1,evdev=/dev/input/by-id/[some_keyboard_device]-event-kbd,grab_all=on'/>
+  </qemu:commandline>
+</domain>
+```
+
+#### 5. 指定聲音輸出到 userspace 的 PulseAudio server 而非透過 `virt-manager` 視窗
+
+我個人稍微實驗了一下，這步不是必要的，也不會讓效能比較好，加上這些設定是讓虛擬機的 `virt-manager` 視窗關閉的時候依然可以輸出聲音到 userspace 的 PulseAudio server
+
+加入 `QEMU_AUDIO_DRV`, `QEMU_PA_SERVER` 環境變數指定 PulseAudio server，可以用`ls -l /run/user/1000/pulse/native` 確認一下 PulseAudio server，如果 uid 不是 `1000` 有可能就不在這個位置上
+
+```xml
+<domain type='kvm' xmlns:qemu='http://libvirt.org/schemas/domain/qemu/1.0'>
+  ...
+  <qemu:commandline>
+    ...
+    <qemu:env name='QEMU_AUDIO_DRV' value='pa'/>
+    <qemu:env name='QEMU_PA_SERVER' value='/run/user/1000/pulse/native'/>
+  </qemu:commandline>
+</domain>
+```
+
+改完 `:wq` 存檔，應該可以看到 `Domain [vm_name] XML configuration edited` 表示成功修改
+
+### 開機，安裝 Windows
+
+用 `virt-manager` GUI 啟動虛擬機，
+
+#### 因為設定了 `evdev` passthrough，按下啟動的瞬間鍵盤滑鼠會被虛擬機吃掉，虛擬機啟動之後 按下左 Ctrl 加 右 Ctrl 來切換操作 host/guest
+
+同時應該可以看到接在 passthrough dGPU 的螢幕會亮起來顯示 `Tianocore` 的 logo，不過在 driver 安裝完成之前操作都還是在 `virt-manager` 視窗裡
+
+進入 Windows 安裝程式開始安裝，如果你像我一樣在硬碟 bus 的地方選用 `virtio`，你會看到：
+
+![virtio-disk-driver-1](https://i.imgur.com/E6tIjFn.png)
+
+載入驅動程式，如果有加入 `virtio-win.iso` 應該可以自動搜尋到 driver，如果沒有再自己找：
+
+![virtio-disk-driver-2](https://i.imgur.com/0YSW4sT.png)
+
+![virtio-disk-driver-3](https://i.imgur.com/klrqFNE.png)
+
+之後就是正常的 Windows 安裝程序，安裝完成開到 Windows
+
+### 在 guest OS 上安裝驅動程式
+
+Windows 開起來之後，在 Windows 圖案上按下右鍵，打開 `裝置管理員`，會有幾個裝置上面有驚嘆號表示沒有驅動程式：
+
+* 網路卡：按下右鍵選更新驅動程式，然後把搜尋目錄設定在 `virtio-win.iso` CD-ROM 根目錄應該可以找的到
+* 顯示卡：網路卡正常運作後，顯示卡應該直接按下右鍵選更新驅動程式，然後讓他自動去抓就可以了
+* AC97 音效卡：
+  * 從 [Realtek](https://www.realtek.com/en/component/zoo/category/pc-audio-codecs-ac-97-audio-codecs-software) 下載驅動程式並且解壓放好
+    * 我的 Guest OS 是 Windows 10，用 `Vista/Win7 (32/64 bits) Driver only (ZIP file)` 可行
+    * 需要填寫 Email 才能下載
+  * 顯然硬體不是官方的...需要關閉驅動程式簽章檢查才能安裝...請見這個影片：https://www.youtube.com/watch?v=5-Y-oq3DMMA
+* 可能還會有其他有驚嘆號的裝置，理論上都是 virtio 相關的硬體，一樣按下右鍵選更新驅動程式，然後把搜尋目錄設定在 `virtio-win.iso` CD-ROM 根目錄應該可以找的到
+
+把 GPU driver 裝起來應該可以看到順順的畫面從 dGPU 輸出到螢幕上囉！
+
+#### 後記：一個方便的螢幕接法
+
+Windows 虛擬機沒啟動的時候，這樣接使用兩個螢幕：
 
 ```
 Intel Graphics --- Monitor 1
@@ -330,15 +431,7 @@ Intel Graphics --- Monitor 1
 Graphic card   --- Monitor 2
 ```
 
-When I want to start VM, disable Monitor 2 on the host and boot VM
-
-#### Default grub boot with gpu passthrough
-
-set default grub boot option, my vfio boot option is 3rd (first is 0):
-
-```
-grub-set-default 2
-```
+如果要啟動 Windows 虛擬機，也不用一直把線拔來拔去，修改顯示設定讓 host OS 不要輸出畫面到 Monitor 2 即可
 
 ## macOS High Sierra VM
 
@@ -384,4 +477,3 @@ using virt-manager GUI:
 #### Install macOS
 
 Set CDROM to use the iso from `create_iso_highsierra.sh`, then just follow [instructions from kholia/OSX-KVM](https://github.com/kholia/OSX-KVM/tree/master/HighSierra#installer-steps)
-
